@@ -12,6 +12,7 @@ fn main() {
     .add_system(movement_system.system())
     .add_system(spawn_bullet.system())
     .add_system(move_bullets.system())
+    .add_system(move_enemies.system())
     .add_system(spawn_enemies.system())
     .add_system(despawn_bullets.system())
     .add_resource(BulletSpeedTimer(Timer::from_seconds(0.1, true)))
@@ -61,7 +62,7 @@ fn setup(
 
 
 fn movement_system(
-    mut player_query: Query<( & mut Player, &mut RigidBodyHandleComponent)>,
+    mut player_query: Query<( &mut Player, &RigidBodyHandleComponent)>,
     time: Res<Time>,
     keyboard_input: Res<Input<KeyCode>>,
     mut rigid_bodies: ResMut<RigidBodySet>,
@@ -224,7 +225,7 @@ fn create_bullet (
 }
 
 fn move_bullets(
-    mut query_bullet: Query<(& Direction, &RigidBodyHandleComponent, &Bullet)>,
+    mut query_bullet: Query<(& Direction, & RigidBodyHandleComponent, &Bullet)>,
     mut rigid_bodies: ResMut<RigidBodySet>,
     mut timer: ResMut< BulletSpeedTimer>,
     time: Res<Time>,
@@ -312,9 +313,27 @@ fn spawn_enemies(
 ///Enemies will know where player is and move towards that direction
 /// TODO: Maybe some types of enemies move in different ways.
 fn move_enemies(
-
+    player_position_query: Query<&Transform, With<Player>>,
+    enemies_query: Query<(&RigidBodyHandleComponent, &Transform), With<Enemy>>,
+    mut rigid_bodies: ResMut<RigidBodySet>
 ) {
-
+    for player_transform in player_position_query.iter() {
+        for (rigid_body_handle, enemy_transform) in enemies_query.iter() {
+            if let Some(rb) = rigid_bodies.get_mut(rigid_body_handle.handle()) {
+                //Should move towards player with some fuzzy logic added
+                //if transform.translation.x > 0, x_force = 5.0, else x_force = -5.0, 
+                let mut x_force = 5.0;
+                let mut y_force = 5.0;
+                if player_transform.translation.x < enemy_transform.translation.x {
+                    x_force = -5.0;
+                }
+                if player_transform.translation.y < enemy_transform.translation.y {
+                    y_force = -5.0;
+                }
+                rb.set_linvel(Vector2::new(x_force, y_force), true)
+            }
+        }
+    }
 }
 
 fn generate_xy_values(transform: &Transform) -> (i32, i32) {
