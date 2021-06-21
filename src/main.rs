@@ -1,13 +1,22 @@
 use bevy::prelude::*;
 use bevy_rapier2d::physics::{RapierPhysicsPlugin, RapierConfiguration,RigidBodyHandleComponent};
-use bevy_rapier2d::rapier::dynamics::{RigidBodyBuilder, RigidBodySet};
-use bevy_rapier2d::rapier::geometry::ColliderBuilder;
+use bevy_rapier2d::rapier::dynamics::{RigidBodyColliders, RigidBodyCcd};
+// use bevy_rapier2d
+use bevy_rapier2d::rapier::geometry::{ColliderBuilder};
 use bevy_rapier2d::rapier::na::Vector2;
+
 use rand::Rng;
+use std::time::Duration;
+use game_collisions::*;
+use game_data::*;
+use game_data::Direction as Direction;
+
+
 fn main() {
     App::build()
     .add_plugins(DefaultPlugins)
     .add_plugin(RapierPhysicsPlugin)
+    .add_plugin(CollisionPlugin)
     .add_startup_system(setup.system())
     .add_system(movement_system.system())
     .add_system(spawn_bullet.system())
@@ -15,25 +24,23 @@ fn main() {
     .add_system(move_enemies.system())
     .add_system(spawn_enemies.system())
     .add_system(despawn_bullets.system())
-    .add_resource(BulletSpeedTimer(Timer::from_seconds(0.1, true)))
-    .add_resource(EnemySpawnTimer(Timer::from_seconds(3.0, true)))
-    .add_resource(EnemyCount(0))
+    .insert_resource(BulletSpeedTimer(Timer::from_seconds(0.1, true)))
+    .insert_resource(EnemySpawnTimer(Timer::from_seconds(3.0, true)))
+    .insert_resource(EnemyCount(0))
     .run();
 
     //defaults to a window of 1280x720. 
 }
 
 
-
 fn setup(
-    commands: &mut Commands,
+    mut commands: Commands,
     mut materials: ResMut<Assets<ColorMaterial>>,
     mut rapier_config: ResMut<RapierConfiguration>
     
 ) {
     //spawn camera
-    commands.spawn(Camera2dBundle::default());
-
+    commands.spawn_bundle(OrthographicCameraBundle::new_2d());
     rapier_config.gravity = Vector2::zeros();
 
     let sprite_size_x = 40.0;
@@ -47,18 +54,17 @@ fn setup(
     let collider_size_y = sprite_size_y / rapier_config.scale;
 
 
-    commands.spawn(SpriteBundle{
+    commands.spawn_bundle(SpriteBundle{
         transform: Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)),
         material: materials.add(Color::WHITE.into()),
         sprite: Sprite::new(Vec2::new(sprite_size_x, sprite_size_y)),
         ..Default::default()
     })
-    .with(Player::default())
-    .with(Direction::East)
-    .with(RigidBodyBuilder::new_dynamic())
-    .with(ColliderBuilder::cuboid(collider_size_x / 2.0, collider_size_y / 2.0));
+    .insert(Player::default())
+    .insert(Direction::East)
+    .insert(RigidBodyBuilder::new_dynamic())
+    .insert(ColliderBuilder::cuboid(collider_size_x / 2.0, collider_size_y / 2.0));
 }
-
 
 
 fn movement_system(
@@ -109,16 +115,16 @@ fn movement_system(
         debug!("x velocity: {}", x_velocity);
         player.velocity.y = y_velocity;
         debug!("y velocity: {}", y_velocity);
-
+        
         if let Some(rb) = rigid_bodies.get_mut(rigid_body_component.handle()) {
-            rb.set_linvel(player.velocity, true);
+            rb.set_linvel( player.velocity , true);
         }
     }
 }
 /// using player position as origin of shot, fires into direction of latest arrowkey position
 /// spawns a projectile that despawns on hit or after time elapses
 fn spawn_bullet(
-    commands: &mut Commands,
+    mut commands: Commands,
     mut player_query: Query<(&Transform, &Player, &mut Timer, &mut Direction)>,
     mut player_entity_query: Query<(&Player, Entity, &Transform, &mut Direction), Without<Timer>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
@@ -128,16 +134,16 @@ fn spawn_bullet(
 ) {
     if keyboard_input.pressed(KeyCode::Space) {
         for(_, entity, transform, last_direction) in player_entity_query.iter_mut() {
-            create_bullet(commands, &rapier_config, &keyboard_input, transform, materials.add(Color::YELLOW.into()), last_direction);
-            commands.insert_one(entity, Timer::from_seconds(0.15, true));
+            create_bullet(&mut commands, &rapier_config, &keyboard_input, transform, materials.add(Color::YELLOW.into()), last_direction);
+            commands.entity(entity).insert(Timer::from_seconds(0.15, true));
             debug!("Inserted one timer and created a bullet");
         }
         for (transform, _, mut timer, last_direction) in player_query.iter_mut() {
             debug!("ticking {}", time.delta_seconds());
-            timer.tick(time.delta_seconds());
+            timer.tick(Duration::from_secs_f32(time.delta_seconds()));
             if timer.finished() {
                 debug!("Timer finished so I'm creating one bullet");
-                create_bullet( commands, &rapier_config, &keyboard_input, transform, materials.add(Color::YELLOW.into()), last_direction);    
+                create_bullet(&mut commands, &rapier_config, &keyboard_input, transform, materials.add(Color::YELLOW.into()), last_direction);    
             }
         }
         
@@ -158,20 +164,20 @@ fn create_enemy(
     let collider_size_y = sprite_size_y / rapier_config.scale;
 
     commands
-        .spawn(SpriteBundle {
+        .spawn_bundle(SpriteBundle {
             material,
             transform: Transform::from_translation(Vec3::new(x_position as f32, y_position as f32, 0.0)),
             sprite: Sprite::new(Vec2::new(sprite_size_x, sprite_size_y)),
             ..Default::default()
         })
-        .with(Enemy)
-        .with(RigidBodyBuilder::new_dynamic()
+        .insert(Enemy)
+        .insert(RigidBodyBuilder::new_dynamic()
         .translation(x_position as f32 / rapier_config.scale, y_position as f32 / rapier_config.scale))
-        .with(ColliderBuilder::cuboid(collider_size_x/2., collider_size_y/2.));
+        .insert(ColliderBuilder::cuboid(collider_size_x/2., collider_size_y/2.));
 }
 
 fn create_bullet (
-    commands: &mut Commands, 
+    commands: & mut Commands, 
     rapier_config: &ResMut<RapierConfiguration>, 
     keyboard_input: &Res<Input<KeyCode>>,
     transform: &Transform,
@@ -210,18 +216,19 @@ fn create_bullet (
     };
 
     commands
-        .spawn(SpriteBundle{
+        .spawn_bundle(SpriteBundle{
             material,
             transform: Transform::from_translation(Vec3::new(transform.translation.x, transform.translation.y, 0.)),
             sprite: Sprite::new(Vec2::new(sprite_size_x, sprite_size_y)),
             ..Default::default()
         })
-        .with(direction)
-        .with(Bullet(30.))
-        .with(RigidBodyBuilder::new_dynamic()
+        .insert(direction)
+        .insert(Bullet(30.))
+        .insert(RigidBodyBuilder::new_dynamic()
         .translation(translation.x / rapier_config.scale, translation.y / rapier_config.scale))
-        .with(ColliderBuilder::cuboid(collider_size_x/2., collider_size_y/2.))
-        .with(BulletLifetime(Timer::from_seconds(1.5, true)));
+        .insert(ColliderBuilder::cuboid(collider_size_x/2., collider_size_y/2.)
+        .sensor(true)) //used to make a separate event handler system
+        .insert(BulletLifetime(Timer::from_seconds(1.5, true)));
 }
 
 fn move_bullets(
@@ -230,7 +237,7 @@ fn move_bullets(
     mut timer: ResMut< BulletSpeedTimer>,
     time: Res<Time>,
 ) {
-    timer.0.tick(time.delta_seconds());
+    timer.0.tick(Duration::from_secs_f32(time.delta_seconds()));
     if timer.0.finished() {
         for (direction, rigid_body_handle, bullet) in query_bullet.iter_mut() {
             debug!("Direction: {:?}", direction);
@@ -274,22 +281,22 @@ fn move_bullets(
 }
 
 fn despawn_bullets(
-    commands: &mut Commands,
+    mut commands: Commands,
     mut bullet_query: Query<(&mut BulletLifetime, Entity)>,
     time: Res<Time>,
 ) {
     for (mut bullet_timer, entity) in bullet_query.iter_mut() {
-        bullet_timer.0.tick(time.delta_seconds());
+        bullet_timer.0.tick(Duration::from_secs_f32(time.delta_seconds()));
         if bullet_timer.0.finished() {
             debug!("Despawning a bullet");
-            commands.despawn(entity);
+            commands.entity(entity).despawn();
         }
     }
 }
 
 ///generates a random number that is outside of the range of the player position plus some buffer distance
 fn spawn_enemies(
-    commands: &mut Commands,
+    mut commands: Commands,
     player_position_query: Query<&Transform, With<Player>>,
     mut enemy_count: ResMut<EnemyCount>,
     mut enemy_spawn_timer: ResMut<EnemySpawnTimer>,
@@ -299,13 +306,13 @@ fn spawn_enemies(
 ) {
     //get player position, generate random number around that position, spawn the enemy there, 
     // use timer and enemy count to decide when to spawn
-    enemy_spawn_timer.0.tick(time.delta_seconds());
+    enemy_spawn_timer.0.tick(Duration::from_secs_f32(time.delta_seconds()));
     if enemy_spawn_timer.0.finished() && enemy_count.0 < 20 {
-        info!("timer finished");
+        debug!("timer finished");
         for transform in player_position_query.iter() {
             let (x_position, y_position) = generate_xy_values(&transform);
-            info!("Spawn at pos x: {}, pos y: {}", x_position, y_position);
-            create_enemy(commands, &rapier_config, materials.add(Color::RED.into()), x_position, y_position);
+            debug!("Spawn at pos x: {}, pos y: {}", x_position, y_position);
+            create_enemy(&mut commands, &rapier_config, materials.add(Color::RED.into()), x_position, y_position);
             enemy_count.0 +=1;
         }   
     }
@@ -342,36 +349,36 @@ fn generate_xy_values(transform: &Transform) -> (i32, i32) {
     let window_min_x = -window_max_x;
     let window_min_y = -window_max_y;
     let mut rng = rand::thread_rng();
-    info!("translation.x: {}, translation.y: {}", transform.translation.x, transform.translation.y);
+    debug!("translation.x: {}, translation.y: {}", transform.translation.x, transform.translation.y);
     let mut x = 0;
     let mut is_x_valid = false;
     if transform.translation.x as i32 + 50 < window_max_x {
-        x = rng.gen_range(transform.translation.x as i32 + 50, window_max_x);
+        x = rng.gen_range(transform.translation.x as i32 + 50.. window_max_x);
         is_x_valid = true;
     }
     let mut x2 = 0;
     let mut is_x2_valid = false;
     if transform.translation.x as i32 -50 > window_min_x {
-        x2 = rng.gen_range(window_min_x, transform.translation.x as i32 + 50);
+        x2 = rng.gen_range(window_min_x.. transform.translation.x as i32 + 50);
         is_x2_valid = true;
     }
     let mut y = 0;
     let mut is_y_valid = false;
     if transform.translation.y as i32 + 50 < window_max_y {
-        y = rng.gen_range(transform.translation.y as i32 + 50, window_max_y);
+        y = rng.gen_range(transform.translation.y as i32 + 50..window_max_y);
         is_y_valid = true;
     }
     let mut y2 = 0;
     let mut is_y2_valid = false;
     if transform.translation.y as i32 - 50 > window_min_y {
-        y2 = rng.gen_range(window_min_y, transform.translation.y as i32) - 50;
+        y2 = rng.gen_range(window_min_y..transform.translation.y as i32) - 50;
         is_y2_valid = true;
     }
     let x_pair = [x, x2];
     let y_pair = [y, y2];
     // pick between one of the two x values, as long as the value is within range of 0..1280 for x and 0..720 for y.
-    let choose_x = rng.gen_range(0usize, 2usize);
-    let choose_y = rng.gen_range(0usize,2usize);
+    let choose_x = rng.gen_range(0usize..2usize);
+    let choose_y = rng.gen_range(0usize..2usize);
     let mut x_position = 0;
     let mut y_position = 0;
     if is_x_valid && is_x2_valid {
@@ -388,7 +395,7 @@ fn generate_xy_values(transform: &Transform) -> (i32, i32) {
     } else if is_y2_valid {
         y_position = y2;
     }
-    info!("x_position: {}, y_position: {}, translation.x: {}, translation.y: {}", x_position, y_position, transform.translation.x, transform.translation.y);
+    debug!("x_position: {}, y_position: {}, translation.x: {}, translation.y: {}", x_position, y_position, transform.translation.x, transform.translation.y);
     (x_position, y_position)
 }
 
@@ -419,47 +426,7 @@ fn determine_direction(keyboard_input: &Res<Input<KeyCode>>, mut past_direction:
         latest_direction
         
 }
-#[derive(Debug, Clone, Copy)]
-pub enum Direction{
-    North,
-    NorthEast,
-    NorthWest,
-    East,
-    West,
-    South,
-    SouthEast,
-    Southwest,
-}
-pub struct ShootEvent(Entity);
 
-pub struct BulletTimer(Timer);
-
-pub struct BulletSpeedTimer(Timer);
-
-pub struct BulletLifetime(Timer);
-
-pub struct EnemySpawnTimer(Timer);
-
-pub struct EnemyCount(i32);
-
-pub struct Enemy;
-
-pub struct Player{
-    max_velocity: f32,
-    acceleration: f32,
-    velocity: Vector2<f32>,
-}
-pub struct Bullet(f32);
-
-impl Default for Player {
-    fn default() -> Self {
-        Player {
-            max_velocity: 20.0,
-            acceleration: 50.0,
-            velocity: Vector2::new(0.0, 0.0),
-        }
-    }
-}
 
 
 pub fn apply_frictions( mut velocity: f32 ) -> f32 {
