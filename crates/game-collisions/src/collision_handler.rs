@@ -1,20 +1,24 @@
 use bevy::prelude::*;
-use bevy_rapier2d::rapier::geometry::InteractionGraph;
-use bevy_rapier2d::rapier::dynamics::{RigidBodyCcd};
-use bevy_rapier2d::rapier::dynamics::RigidBodyColliders;
+use bevy_rapier2d::{
+    physics::{RigidBodyHandleComponent, EventQueue}, 
+    rapier::{
+        dynamics::RigidBodySet,
+        geometry::{ColliderSet, IntersectionEvent},
+    }
+};
 use game_data::*;
 
 
 pub fn handle_contacts(
     mut commands: Commands,
-    events: Res<IntersectionEvent>,
+    events: Res<EventQueue>,
     colliders: ResMut<ColliderSet>,
-    bodies: ResMut<RigidBodyCcd>,
+    bodies: ResMut<RigidBodySet>,
     enemies: Query<&Enemy>,
     mut bullets: Query<&Bullet>,
 ) {
     let mut contacts = vec![];
-    while let Ok(intersection_event) = .pop() {
+    while let Ok(intersection_event) = events.intersection_events.pop() {
         if intersection_event.intersecting {
             let c1 = colliders.get(intersection_event.collider1).unwrap();
             let c2 = colliders.get(intersection_event.collider2).unwrap();

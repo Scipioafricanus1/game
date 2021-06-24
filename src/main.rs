@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy_rapier2d::physics::{RapierPhysicsPlugin, RapierConfiguration,RigidBodyHandleComponent};
-use bevy_rapier2d::rapier::dynamics::{RigidBodyColliders, RigidBodyCcd};
+use bevy_rapier2d::rapier::dynamics::{RigidBodyBuilder, RigidBodySet};
 // use bevy_rapier2d
 use bevy_rapier2d::rapier::geometry::{ColliderBuilder};
 use bevy_rapier2d::rapier::na::Vector2;
