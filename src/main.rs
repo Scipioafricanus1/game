@@ -226,8 +226,7 @@ fn create_bullet (
         .insert(Bullet(30.))
         .insert(RigidBodyBuilder::new_dynamic()
         .translation(translation.x / rapier_config.scale, translation.y / rapier_config.scale))
-        .insert(ColliderBuilder::cuboid(collider_size_x/2., collider_size_y/2.)
-        .sensor(true)) //used to make a separate event handler system
+        .insert(ColliderBuilder::cuboid(collider_size_x/2., collider_size_y/2.))
         .insert(BulletLifetime(Timer::from_seconds(1.5, true)));
 }
 
